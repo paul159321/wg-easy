@@ -209,6 +209,8 @@ export class ClientService {
           i5: clientConfig.defaultI5,
           persistentKeepalive: clientConfig.defaultPersistentKeepalive,
           serverAllowedIps: [],
+          uploadLimitMbps: 0,
+          downloadLimitMbps: 0,
           enabled: true,
         })
         .returning({ clientId: client.id })
@@ -218,6 +220,14 @@ export class ClientService {
 
   toggle(id: ID, enabled: boolean) {
     return this.#statements.toggle.execute({ id, enabled });
+  }
+
+  updateBandwidth(id: ID, uploadLimitMbps: number, downloadLimitMbps: number) {
+    return this.#db
+      .update(client)
+      .set({ uploadLimitMbps, downloadLimitMbps })
+      .where(eq(client.id, id))
+      .execute();
   }
 
   delete(id: ID) {
@@ -282,6 +292,8 @@ export class ClientService {
         dns: clientConfig.defaultDns,
         persistentKeepalive: clientConfig.defaultPersistentKeepalive,
         serverAllowedIps: [],
+        uploadLimitMbps: 0,
+        downloadLimitMbps: 0,
         enabled,
       })
       .execute();

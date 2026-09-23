@@ -1,5 +1,11 @@
 import { sql, relations } from 'drizzle-orm';
-import { int, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import {
+  real,
+  int,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from 'drizzle-orm/sqlite-core';
 
 import { wgInterface } from '../interface/schema';
 import { oneTimeLink } from '../oneTimeLink/schema';
@@ -64,6 +70,8 @@ export const client = sqliteTable(
     dns: text({ mode: 'json' }).$type<string[]>(),
     serverEndpoint: text('server_endpoint'),
     enabled: int({ mode: 'boolean' }).notNull(),
+    uploadLimitMbps: real('upload_limit_mbps').notNull().default(0),
+    downloadLimitMbps: real('download_limit_mbps').notNull().default(0),
     createdAt: text('created_at')
       .notNull()
       .default(sql`(CURRENT_TIMESTAMP)`),

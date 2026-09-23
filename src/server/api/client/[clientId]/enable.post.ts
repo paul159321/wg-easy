@@ -31,8 +31,7 @@ export default definePermissionEventHandler(
       });
     }
 
-    await Database.clients.toggle(clientId, true);
-    await WireGuard.saveConfig();
+    await WireGuard.mutateConfig(() => Database.clients.toggle(clientId, true));
     return { success: true };
   }
 );

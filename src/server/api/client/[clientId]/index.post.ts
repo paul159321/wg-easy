@@ -1,6 +1,7 @@
 import { getValidatedRouterParams, readValidatedBody } from 'h3';
 
 import Database from '#server/utils/Database';
+import { hasPermissions } from '#shared/utils/permissions';
 import WireGuard from '#server/utils/WireGuard';
 import { definePermissionEventHandler } from '#server/utils/handler';
 import { validateZod } from '#server/utils/types';
@@ -12,7 +13,7 @@ import {
 export default definePermissionEventHandler(
   'clients',
   'update',
-  async ({ event, checkPermissions }) => {
+  async ({ event, checkPermissions, user }) => {
     const { clientId } = await getValidatedRouterParams(
       event,
       validateZod(ClientGetSchema, event)
@@ -26,8 +27,11 @@ export default definePermissionEventHandler(
     const client = await Database.clients.get(clientId);
     checkPermissions(client);
 
-    await Database.clients.update(clientId, data);
-    await WireGuard.saveConfig();
+    await WireGuard.updateClient(
+      clientId,
+      data,
+      hasPermissions(user, 'admin', 'any')
+    );
 
     return { success: true };
   }

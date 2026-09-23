@@ -8,6 +8,24 @@ title: Edit Client
 - **Enabled**: Whether the client can connect to the VPN.
 - **Expire Date**: The date the client will be disabled.
 
+## Bandwidth limits
+
+Administrators can set per-client limits using the speedometer button on a client card or the **Bandwidth limits** section of the client editor. Download appears first, followed by upload. Directions are from the client's perspective.
+
+- **Download**: Traffic sent from the VPN server to the client.
+- **Upload**: Traffic sent from the client to the VPN server.
+- Values are in **Mbps** (megabits per second), from **0.01 to 10000**, with up to two decimal places. Use **0** or leave a field blank for no limit in that direction.
+
+Each client has independent upload and download limits. IPv4 and IPv6 share the same limit in each direction. Changes apply immediately and persist across restarts. Existing clients remain unlimited after upgrading. The live transfer display is unchanged.
+
+Only administrators can change limits, including through the API. Limits apply to the client's assigned VPN addresses. **Server Allowed IPs must be empty** when limits are enabled; routing additional subnets behind a client is not supported with bandwidth limits.
+
+The server uses Linux traffic control policing: packets above the configured rate are dropped, with a small burst allowance. This caps traffic; it does not guarantee bandwidth or fair sharing. Short measurements can exceed the configured rate, and TCP throughput may be lower because of packet loss. Traffic outside the VPN is unaffected.
+
+The official container includes `tc`. The host kernel must support `sch_clsact`, `cls_flower`, and `act_police`, either built in or as loadable modules. The existing `NET_ADMIN` capability is sufficient; no additional device or container is required. If a limit cannot be applied, the update reports an error and attempts to restore the previous settings and rules. If restoration also fails, check the server logs and restart the interface before retrying.
+
+For custom traffic-control configurations, wg-easy reserves filter priorities **49152** and **49153** on the VPN interface in both directions. Leave those priorities unused. Other priorities and the root queueing discipline are preserved.
+
 ## Address
 
 - **IPv4**: The IPv4 address of the client.

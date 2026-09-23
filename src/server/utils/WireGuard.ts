@@ -1,17 +1,27 @@
 import fs from 'node:fs/promises';
 
+import { createError } from 'h3';
 import { createDebug } from 'obug';
 
+import {
+  ConfigurationQueue,
+  applyWithRollback,
+} from '#server/utils/configurationQueue';
+import type {
+  ClientBandwidthUpdateType,
+  UpdateClientType,
+  ClientQueryType,
+} from '#db/repositories/client/types';
 import Database from '#server/utils/Database';
 import { mergeClientStatuses } from '#server/utils/clientStatus';
 import { OLD_ENV, WG_ENV } from '#server/utils/config';
 import { firewall } from '#server/utils/firewall';
+import { bandwidth } from '#server/utils/bandwidth';
 import { encodeQRCode } from '#server/utils/qr';
 import type { ID } from '#server/utils/types';
 import { wg } from '#server/utils/wgHelper';
 import { setIntervalImmediately } from '#shared/utils/time';
 import type { InterfaceType } from '#db/repositories/interface/types';
-import type { ClientQueryType } from '#db/repositories/client/types';
 
 const WG_DEBUG = createDebug('WireGuard');
 
@@ -19,14 +29,108 @@ const generateRandomHeaderValue = () =>
   Math.floor(Math.random() * 2147483642) + 5;
 
 class WireGuard {
+  #queue = new ConfigurationQueue();
+
+  mutateConfig<T>(mutate: () => Promise<T>) {
+    return this.#queue.run(async () => {
+      const result = await mutate();
+      await this.#saveConfig();
+      return result;
+    });
+  }
+
+  updateClient(
+    clientId: ID,
+    data: UpdateClientType | ClientBandwidthUpdateType,
+    canChangeBandwidth: boolean,
+    bandwidthOnly = false
+  ) {
+    return this.#queue.run(async () => {
+      const previous = await Database.clients.get(clientId);
+      if (!previous)
+        throw createError({
+          statusCode: 404,
+          statusMessage: 'Client not found',
+        });
+      if (
+        !canChangeBandwidth &&
+        ((data.uploadLimitMbps !== undefined &&
+          data.uploadLimitMbps !== previous.uploadLimitMbps) ||
+          (data.downloadLimitMbps !== undefined &&
+            data.downloadLimitMbps !== previous.downloadLimitMbps))
+      )
+        throw createError({
+          statusCode: 403,
+          statusMessage: 'Only administrators can change bandwidth limits',
+        });
+      const next = { ...previous, ...data };
+      if (
+        (next.uploadLimitMbps > 0 || next.downloadLimitMbps > 0) &&
+        next.serverAllowedIps.length
+      ) {
+        throw createError({
+          statusCode: 422,
+          statusMessage:
+            'Bandwidth limits require empty Server Allowed IPs; routed subnets are not supported.',
+        });
+      }
+      try {
+        await applyWithRollback({
+          read: async () => previous,
+          write: () =>
+            bandwidthOnly
+              ? Database.clients.updateBandwidth(
+                  clientId,
+                  data.uploadLimitMbps!,
+                  data.downloadLimitMbps!
+                )
+              : Database.clients.update(clientId, data as UpdateClientType),
+          restore: (old) =>
+            bandwidthOnly
+              ? Database.clients.updateBandwidth(
+                  clientId,
+                  old.uploadLimitMbps,
+                  old.downloadLimitMbps
+                )
+              : Database.clients.update(clientId, old),
+          sync: () =>
+            bandwidthOnly ? this.#syncBandwidth() : this.#saveConfig(),
+        });
+      } catch (error) {
+        console.error('Updating client settings failed', error);
+        throw createError({
+          statusCode: 503,
+          statusMessage:
+            error instanceof Error
+              ? error.message
+              : 'Could not apply client settings',
+        });
+      }
+    });
+  }
+
+  async #syncBandwidth() {
+    const wgInterface = await Database.interfaces.get();
+    await bandwidth.sync(
+      await Database.clients.getAll(),
+      wgInterface.name,
+      !WG_ENV.DISABLE_IPV6
+    );
+  }
+
   /**
    * Save and sync config
    */
-  async saveConfig() {
+  saveConfig() {
+    return this.#queue.run(() => this.#saveConfig());
+  }
+
+  async #saveConfig() {
     const wgInterface = await Database.interfaces.get();
     await this.#saveWireguardConfig(wgInterface);
     await this.#syncWireguardConfig(wgInterface);
     await this.#applyFirewallRules(wgInterface);
+    await this.#syncBandwidth();
   }
 
   /**
@@ -237,6 +341,8 @@ class WireGuard {
     WG_DEBUG('Applying firewall rules...');
     await this.#applyFirewallRules(wgInterface);
     WG_DEBUG('Firewall rules applied successfully.');
+    await this.#syncBandwidth();
+    WG_DEBUG('Bandwidth limits applied successfully.');
 
     WG_DEBUG('Starting Cron Job...');
     await this.startCronJob();
@@ -259,12 +365,18 @@ class WireGuard {
     await wg.down(wgInterface.name).catch(() => {});
   }
 
-  async Restart() {
-    const wgInterface = await Database.interfaces.get();
-    await wg.restart(wgInterface.name);
+  Restart() {
+    return this.mutateConfig(async () => {
+      const wgInterface = await Database.interfaces.get();
+      await wg.restart(wgInterface.name);
+    });
   }
 
-  async cronJob() {
+  cronJob() {
+    return this.#queue.run(() => this.#cronJob());
+  }
+
+  async #cronJob() {
     const clients = await Database.clients.getAll();
     let needsSave = false;
     // Expires Feature
@@ -292,7 +404,7 @@ class WireGuard {
     }
 
     if (needsSave) {
-      await this.saveConfig();
+      await this.#saveConfig();
     }
   }
 }

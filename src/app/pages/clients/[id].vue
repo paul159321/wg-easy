@@ -48,6 +48,35 @@
               :description="$t('client.endpointDesc')"
             />
           </FormGroup>
+          <FormGroup v-if="canManageBandwidth">
+            <FormHeading :description="$t('client.bandwidthDesc')">
+              {{ $t('client.bandwidth') }}
+            </FormHeading>
+            <div class="grid gap-4 sm:grid-cols-2">
+              <div class="min-w-0 space-y-2">
+                <FormNumberField
+                  id="downloadLimitMbps"
+                  v-model="data.downloadLimitMbps"
+                  :label="$t('client.downloadLimitMbps')"
+                  suffix="Mbps"
+                  :min="0"
+                  :max="10000"
+                  :step="0.01"
+                />
+              </div>
+              <div class="min-w-0 space-y-2">
+                <FormNumberField
+                  id="uploadLimitMbps"
+                  v-model="data.uploadLimitMbps"
+                  :label="$t('client.uploadLimitMbps')"
+                  suffix="Mbps"
+                  :min="0"
+                  :max="10000"
+                  :step="0.01"
+                />
+              </div>
+            </div>
+          </FormGroup>
           <FormGroup>
             <FormHeading :description="$t('client.allowedIpsDesc')">
               {{ $t('general.allowedIps') }}
@@ -258,6 +287,10 @@
 
 <script lang="ts" setup>
 const globalStore = useGlobalStore();
+const authStore = useAuthStore();
+const canManageBandwidth = computed(
+  () => authStore.userData && hasPermissions(authStore.userData, 'admin', 'any')
+);
 
 const route = useRoute();
 const id = route.params.id as string;
