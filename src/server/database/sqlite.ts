@@ -13,6 +13,7 @@ import { OneTimeLinkService } from '#db/repositories/oneTimeLink/service';
 import { ClientService } from '#db/repositories/client/service';
 import * as schema from '#db/schema';
 import { WG_ENV, WG_INITIAL_ENV } from '#server/utils/config';
+import { upgradeLegacyBandwidthDatabase } from '#db/legacyBandwidthMigration';
 
 const DB_DEBUG = createDebug('Database');
 
@@ -62,6 +63,7 @@ export type DBServiceType = DBService;
 async function migrate() {
   try {
     DB_DEBUG('Migrating database...');
+    await upgradeLegacyBandwidthDatabase(client);
     await drizzleMigrate(db, {
       migrationsFolder: './server/database/migrations',
     });
