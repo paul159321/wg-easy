@@ -1,6 +1,8 @@
 <template>
-  <DialogRoot :modal="true" @update:open="updateOpen">
-    <DialogTrigger :class="triggerClass"><slot name="trigger" /></DialogTrigger>
+  <DialogRoot :modal="true" :open="open" @update:open="updateOpen">
+    <DialogTrigger :class="triggerClass" :as-child="triggerAsChild"
+      ><slot name="trigger"
+    /></DialogTrigger>
     <DialogPortal>
       <DialogOverlay
         class="fixed inset-0 z-30 bg-gray-500 opacity-75 dark:bg-black dark:opacity-50"
@@ -14,6 +16,7 @@
           <slot name="title" />
         </DialogTitle>
         <DialogDescription
+          as="div"
           class="mb-5 mt-2 text-sm leading-normal text-gray-500 dark:text-neutral-300"
         >
           <slot name="description" />
@@ -27,13 +30,24 @@
 </template>
 
 <script lang="ts" setup>
-defineProps<{ triggerClass?: string }>();
+import { computed } from 'vue';
+
+const props = withDefaults(
+  defineProps<{
+    triggerClass?: string;
+    triggerAsChild?: boolean;
+    open?: boolean;
+  }>(),
+  { open: undefined, triggerClass: undefined, triggerAsChild: false }
+);
 
 const emit = defineEmits<{
   'update:open': [open: boolean];
 }>();
 
-function updateOpen(open: boolean) {
-  emit('update:open', open);
+const open = computed(() => props.open);
+
+function updateOpen(value: boolean) {
+  emit('update:open', value);
 }
 </script>

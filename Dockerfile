@@ -64,6 +64,7 @@ RUN apk add --no-cache \
     dumb-init \
     iptables \
     ip6tables \
+    iproute2-tc \
     nftables \
     kmod \
     iptables-legacy \

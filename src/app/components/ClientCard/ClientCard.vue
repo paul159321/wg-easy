@@ -14,6 +14,7 @@
             <div>
               <ClientCardAddress :client="client" />
             </div>
+            <ClientCardBandwidth :client="client" />
             <div>
               <ClientCardLastSeen :client="client" />
             </div>
@@ -35,6 +36,13 @@
         class="flex items-center justify-between gap-1 text-gray-400 dark:text-neutral-400"
       >
         <ClientCardSwitch :client="client" />
+        <ClientCardBandwidthAction
+          v-if="
+            authStore.userData &&
+            hasPermissions(authStore.userData, 'admin', 'any')
+          "
+          :client="client"
+        />
         <ClientCardEdit :client="client" />
         <ClientCardQRCode :client="client" />
         <ClientCardConfig :client="client" />
@@ -45,6 +53,7 @@
 </template>
 
 <script setup lang="ts">
+const authStore = useAuthStore();
 defineProps<{
   client: LocalClient;
 }>();

@@ -217,6 +217,9 @@ importers:
       drizzle-orm:
         specifier: ^0.45.4
         version: 0.45.4(@libsql/client@0.18.0)
+      h3:
+        specifier: 1.15.11
+        version: 1.15.11
       ip-bigint:
         specifier: ^10.0.4
         version: 10.0.4

@@ -35,8 +35,15 @@ export type CreateClientType = Omit<
 
 export type UpdateClientType = Omit<
   CreateClientType,
-  'privateKey' | 'publicKey' | 'preSharedKey' | 'userId' | 'interfaceId'
->;
+  | 'privateKey'
+  | 'publicKey'
+  | 'preSharedKey'
+  | 'userId'
+  | 'interfaceId'
+  | 'uploadLimitMbps'
+  | 'downloadLimitMbps'
+> &
+  Partial<ClientBandwidthUpdateType>;
 
 const name = z
   .string({ message: t('zod.client.name') })
@@ -76,6 +83,23 @@ export const ClientCreateSchema = z.object({
 
 export type ClientCreateType = z.infer<typeof ClientCreateSchema>;
 
+export const bandwidthLimit = z.preprocess(
+  (value) => (value === '' || value === null ? 0 : value),
+  z
+    .number()
+    .finite()
+    .min(0)
+    .max(10000)
+    .refine((value) => Math.abs(value * 100 - Math.round(value * 100)) < 1e-7)
+);
+export const ClientBandwidthUpdateSchema = z.object({
+  uploadLimitMbps: bandwidthLimit,
+  downloadLimitMbps: bandwidthLimit,
+});
+
+export type ClientBandwidthUpdateType = z.infer<
+  typeof ClientBandwidthUpdateSchema
+>;
 const filter = z.string().pipe(safeStringRefine);
 
 const sort = z.enum(['asc', 'desc']);
@@ -120,6 +144,8 @@ export const ClientUpdateSchema = schemaForType<UpdateClientType>()(
     persistentKeepalive: PersistentKeepaliveSchema,
     serverEndpoint: AddressSchema.nullable(),
     dns: DnsSchema.nullable(),
+    uploadLimitMbps: bandwidthLimit.optional(),
+    downloadLimitMbps: bandwidthLimit.optional(),
   })
 );
 
