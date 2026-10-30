@@ -2,15 +2,17 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
 import type { Client } from '@libsql/client';
+import { createDebug } from 'obug';
 
-const LEGACY_MIGRATION_TIME = 1789980000000;
+const DB_DEBUG = createDebug('Database');
+
 const OFFICIAL_MIGRATIONS = [
   { tag: '0008_thin_patch', when: 1788760134302 },
   { tag: '0009_dusty_prodigy', when: 1790082534310 },
   { tag: '0010_client_bandwidth', when: 1793364960712 },
 ] as const;
 
-/** Reconciles databases created by the earlier v15 bandwidth image. */
+/** Reconciles databases whose bandwidth columns predate migration 0010. */
 export async function upgradeLegacyBandwidthDatabase(
   client: Client,
   migrationsFolder = './server/database/migrations'
@@ -19,12 +21,6 @@ export async function upgradeLegacyBandwidthDatabase(
     "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '__drizzle_migrations'"
   );
   if (migrationTable.rows.length === 0) return;
-
-  const legacy = await client.execute({
-    sql: 'SELECT 1 FROM __drizzle_migrations WHERE created_at = ?',
-    args: [LEGACY_MIGRATION_TIME],
-  });
-  if (legacy.rows.length === 0) return;
 
   const recorded = await client.execute(
     'SELECT created_at FROM __drizzle_migrations'
@@ -38,18 +34,26 @@ export async function upgradeLegacyBandwidthDatabase(
     columns.set(table, new Set(result.rows.map((row) => String(row.name))));
   }
   const clientColumns = columns.get('clients_table')!;
-  if (
-    !clientColumns.has('upload_limit_mbps') ||
-    !clientColumns.has('download_limit_mbps')
-  ) {
-    throw new Error(
-      'Legacy bandwidth migration is recorded, but its columns are missing'
-    );
-  }
+  const hasUpload = clientColumns.has('upload_limit_mbps');
+  const hasDownload = clientColumns.has('download_limit_mbps');
+  if (!hasUpload && !hasDownload) return;
 
   const statements: string[] = [];
   const migrationSql = (tag: string) =>
     readFileSync(`${migrationsFolder}/${tag}.sql`, 'utf8');
+  const addMissingColumns = (sql: string, tag: string) => {
+    for (const statement of sql.split('--> statement-breakpoint')) {
+      const match = statement.match(/ALTER TABLE `([^`]+)` ADD `([^`]+)`/i);
+      if (!match) {
+        throw new Error(`Unexpected SQL in migration ${tag}`);
+      }
+      const table = match[1]!;
+      const column = match[2]!;
+      if (!columns.get(table)?.has(column)) {
+        statements.push(statement);
+      }
+    }
+  };
   const record = (sql: string, when: number) => {
     const hash = createHash('sha256').update(sql).digest('hex');
     statements.push(
@@ -59,18 +63,8 @@ export async function upgradeLegacyBandwidthDatabase(
 
   const officialEight = OFFICIAL_MIGRATIONS[0];
   const eightSql = migrationSql(officialEight.tag);
+  addMissingColumns(eightSql, officialEight.tag);
   if (!applied.has(officialEight.when)) {
-    for (const statement of eightSql.split('--> statement-breakpoint')) {
-      const match = statement.match(/ALTER TABLE `([^`]+)` ADD `([^`]+)`/i);
-      if (!match) {
-        throw new Error('Unexpected SQL in official migration 0008');
-      }
-      const table = match[1]!;
-      const column = match[2]!;
-      if (!columns.get(table)?.has(column)) {
-        statements.push(statement);
-      }
-    }
     record(eightSql, officialEight.when);
   }
 
@@ -82,6 +76,9 @@ export async function upgradeLegacyBandwidthDatabase(
   }
 
   const officialTen = OFFICIAL_MIGRATIONS[2];
-  record(migrationSql(officialTen.tag), officialTen.when);
+  const tenSql = migrationSql(officialTen.tag);
+  addMissingColumns(tenSql, officialTen.tag);
+  record(tenSql, officialTen.when);
   await client.batch(statements, 'write');
+  DB_DEBUG('Reconciled existing bandwidth columns with migrations 0008-0010');
 }
